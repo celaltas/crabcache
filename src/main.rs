@@ -10,6 +10,7 @@ use std::io::{self, Read, Write};
 pub mod commands;
 pub mod connection;
 pub mod hashtable;
+pub mod scalablehashmap;
 
 const SERVER: Token = Token(0);
 

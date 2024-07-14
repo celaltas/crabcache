@@ -1,13 +1,19 @@
-use anyhow::{ensure, Result};
+use anyhow::Result;
 
 #[derive(Debug, Clone)]
-struct HashNode {
+pub struct HashNode {
     next: Option<Box<HashNode>>,
     code: u64,
 }
 
-struct HashTable {
-    table: Vec<Option<Box<HashNode>>>,
+impl PartialEq for HashNode {
+    fn eq(&self, other: &Self) -> bool {
+        self.code == other.code
+    }
+}
+
+pub struct HashTable {
+    pub table: Vec<Option<Box<HashNode>>>,
     size: usize,
     mask: usize,
 }
@@ -22,13 +28,13 @@ impl HashTable {
         Ok(Self { table, size, mask })
     }
 
-    pub fn insert(&mut self, mut node: Box<HashNode>) {
+    pub fn insert(&mut self, mut node: HashNode) {
         let pos = (node.code & (self.mask as u64)) as usize;
         let next = self.table.get_mut(pos).and_then(Option::take);
         if let Some(n) = next {
             node.next = Some(n);
         }
-        self.table[pos] = Some(node);
+        self.table[pos] = Some(Box::new(node));
         self.size += 1;
     }
 
@@ -51,26 +57,38 @@ impl HashTable {
         None
     }
 
-    pub fn detach(&mut self, from: &mut Option<Box<HashNode>>) -> Option<Box<HashNode>> {
-        if let Some(mut node) = from.take() {
-            *from = node.next.take();
-            self.size -= 1;
-            Some(node)
-        } else {
-            None
-        }
+    pub fn detach(&mut self, from: &mut HashNode) -> Option<HashNode> {
+        let _ = std::mem::replace(&mut from.next, None);
+        self.size -= 1;
+        Some(HashNode {
+            code: from.code,
+            next: None,
+        })
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.size == 0
+    }
+
+    pub fn size(&self) -> usize {
+        self.size
+    }
+
+    pub fn mask(&self) -> usize {
+        self.mask
     }
 }
 
 #[cfg(test)]
 mod tests {
+
     use super::*;
 
     fn print_out_linked_list(head: &Option<Box<HashNode>>) {
-        let mut head = head;
-        while let Some(node) = head {
+        let mut current = head;
+        while let Some(node) = current {
             print!("{}->", node.code);
-            head = &node.next;
+            current = &node.next;
         }
     }
 
@@ -84,15 +102,28 @@ mod tests {
         }
     }
 
-    fn generate_node_list(n: usize) -> Vec<Box<HashNode>> {
+    fn generate_node_list(n: usize) -> Vec<HashNode> {
         let mut nodes = Vec::with_capacity(n);
         for i in 0..n {
-            nodes.push(Box::new(HashNode {
+            nodes.push(HashNode {
+                next: None,
+                code: i as u64,
+            });
+        }
+        nodes
+    }
+
+    fn generate_linked_list(n: usize) -> Option<Box<HashNode>> {
+        let mut head = None;
+        let mut tail = &mut head;
+        for i in 0..n {
+            *tail = Some(Box::new(HashNode {
                 next: None,
                 code: i as u64,
             }));
+            tail = &mut (*tail).as_mut().unwrap().next;
         }
-        nodes
+        head
     }
 
     #[test]
@@ -133,7 +164,7 @@ mod tests {
             code: 4,
         });
 
-        let found = ht.lookup(&node1, |a, b| a.code == b.code);
+        let found = ht.lookup(&node1, |a, b| a == b);
         assert!(found.is_some());
         assert_eq!(found.unwrap().code, 4);
         println!("node1 found!");
@@ -143,7 +174,7 @@ mod tests {
             code: 13,
         });
 
-        let found = ht.lookup(&node2, |a, b| a.code == b.code);
+        let found = ht.lookup(&node2, |a, b| a == b);
         assert!(found.is_some());
         assert_eq!(found.unwrap().code, 13);
         println!("node2 found!");
@@ -153,7 +184,7 @@ mod tests {
             code: 21,
         });
 
-        let found = ht.lookup(&node3, |a, b| a.code == b.code);
+        let found = ht.lookup(&node3, |a, b| a == b);
         assert!(found.is_none());
         println!("node3 not found!");
 
@@ -161,22 +192,37 @@ mod tests {
             next: None,
             code: 45,
         });
-        let found = ht.lookup(&node4, |a, b| a.code == b.code);
+        let found = ht.lookup(&node4, |a, b| a == b);
         assert!(found.is_none());
         println!("node4 not found!");
-
 
         let node5 = Box::new(HashNode {
             next: None,
             code: 16,
         });
 
-        let found = ht.lookup(&node5, |a, b| a.code == b.code);
+        let found = ht.lookup(&node5, |a, b| a == b);
         assert!(found.is_some());
         assert_eq!(found.unwrap().code, 16);
         println!("node5 found!");
         println!("found: {:#?}", found.unwrap())
+    }
 
-        
+    #[test]
+    fn test_detach() {
+        let mut ht = HashTable::new(8).unwrap();
+        ht.size = 5;
+
+        let head = generate_linked_list(5);
+        print_out_linked_list(&head);
+
+        if let Some(mut first_node) = head {
+            let node = first_node.next.as_mut();
+            if let Some(node) = node {
+                let detached = ht.detach(node);
+                println!("Detached node: {:?}", detached);
+                assert_eq!(detached.unwrap().code, 1);
+            }
+        }
     }
 }
