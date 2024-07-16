@@ -1,14 +1,20 @@
-use anyhow::ensure;
-
+use std::fmt::Display;
 use crate::hashtable::{HashNode, HashTable};
 
 const LOAD_FACTOR: usize = 8;
-const RESIZING_WORK: usize = 128;
 
 struct ScalableHashMap {
     table1: Option<HashTable>,
     table2: Option<HashTable>,
-    resizing_pos: usize,
+}
+
+impl Display for ScalableHashMap {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "ScalableHashMap {{\n")?;
+        write!(f, " table1: {:#?}\n", &self.table1)?;
+        write!(f, " table2: {:#?}\n", &self.table2)?;
+        write!(f, " }}\n")
+    }
 }
 
 impl ScalableHashMap {
@@ -16,7 +22,6 @@ impl ScalableHashMap {
         ScalableHashMap {
             table1: Some(HashTable::new(4).unwrap()),
             table2: None,
-            resizing_pos: 0,
         }
     }
 
@@ -25,43 +30,29 @@ impl ScalableHashMap {
         let capacity = self.table1.as_ref().map_or(4, |t| (t.mask() + 1) * 2);
         self.table2 = self.table1.take();
         self.table1 = Some(HashTable::new(capacity).unwrap());
-        self.resizing_pos = 0;
+        self.table1.as_mut().unwrap().resize(capacity);
     }
 
     fn help_resizing(&mut self) {
         if self.table2.is_none() {
             return;
         }
-
-        let mut nwork = 0;
-        let size = self.table2.as_ref().map_or(0, |t| t.size());
-        while nwork < RESIZING_WORK && size > 0 {
-            let resizing_pos = self.resizing_pos;
-            let node = &mut self.table2.unwrap().table[resizing_pos];
-            if node.is_none() {
-                self.resizing_pos += 1;
-                continue;
-            }
-            let node = node.as_mut().unwrap();
-            let detached = self.table2.as_mut().map_or(None, |t| t.detach(node));
-
-            if let Some(n) = detached {
-                self.table1.as_mut().map(|table| table.insert(n));
-                nwork += 1;
-            }
+        if let (Some(noble), Some(substitute)) = (&mut self.table2, &mut self.table1) {
+            noble.drain(..noble.size()).for_each(|item| {
+                substitute.insert(*item);
+            });
         }
-
         if self.table2.as_ref().map_or(0, |t| t.size()) == 0 {
             self.table2 = None;
         }
     }
 
     pub fn lookup(
-        &self,
+        &mut self,
         key: &HashNode,
         cmp: fn(&HashNode, &HashNode) -> bool,
     ) -> Option<&HashNode> {
-        //help resize
+        self.help_resizing();
         self.table1
             .as_ref()
             .and_then(|t| t.lookup(key, cmp))
@@ -77,13 +68,12 @@ impl ScalableHashMap {
         if self.table2.is_none() {
             let length = self.table1.as_ref().unwrap().size();
             let mask = self.table1.as_ref().unwrap().mask() + 1;
-            let load_factor = length / mask;
-            if load_factor >= LOAD_FACTOR {
-                println!("resize");
-                //start resize
+            let loaded = length / mask;
+            if loaded >= LOAD_FACTOR {
+                self.start_resizing();
             }
         }
-        //help resize
+        self.help_resizing()
     }
 
     fn pop_from_table(
@@ -105,6 +95,7 @@ impl ScalableHashMap {
         node: &mut HashNode,
         cmp: fn(&HashNode, &HashNode) -> bool,
     ) -> Option<HashNode> {
+        self.help_resizing();
         let mut table1 = self.table1.take();
         let found = Self::pop_from_table(&mut table1, node, cmp);
         self.table1 = table1;
@@ -126,6 +117,102 @@ impl ScalableHashMap {
     pub fn destroy(&mut self) {
         self.table1 = None;
         self.table2 = None;
-        self.resizing_pos = 0;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn generate_node_list(n: usize) -> Vec<HashNode> {
+        let mut list = Vec::new();
+        for i in 0..n {
+            list.push(HashNode::new(None, i.try_into().unwrap()));
+        }
+        list
+    }
+
+    #[test]
+    fn test_new() {
+        let map = ScalableHashMap::new();
+        assert!(map.table1.is_some());
+        assert!(map.table2.is_none());
+        assert_eq!(map.size(), 0)
+    }
+
+    #[test]
+    fn test_insert() {
+        let mut map = ScalableHashMap::new();
+        let node_number = 15;
+        let nodes = generate_node_list(node_number);
+        for node in nodes {
+            map.insert(node);
+        }
+        assert_eq!(map.size(), node_number);
+    }
+
+    #[test]
+    fn test_lookup() {
+        let mut map = ScalableHashMap::new();
+        let node_number = 15;
+        let nodes = generate_node_list(node_number);
+        let nodes_for_search = nodes.clone();
+
+        for node in nodes {
+            map.insert(node);
+        }
+        for node in &nodes_for_search {
+            assert_eq!(map.lookup(node, |a, b| a == b), Some(node));
+        }
+        assert_eq!(map.lookup(&HashNode::new(None, 123), |a, b| a == b), None);
+        assert_eq!(map.lookup(&HashNode::new(None, 101), |a, b| a == b), None);
+    }
+
+    #[test]
+    fn test_pop() {
+        let mut map = ScalableHashMap::new();
+        let node_number = 15;
+        let nodes = generate_node_list(node_number);
+        let nodes_for_search = nodes.clone();
+
+        for node in nodes {
+            map.insert(node);
+        }
+        for mut node in nodes_for_search {
+            assert_eq!(map.pop(&mut node, |a, b| a == b), Some(node));
+        }
+        assert_eq!(map.pop(&mut HashNode::new(None, 123), |a, b| a == b), None);
+        assert_eq!(map.pop(&mut HashNode::new(None, 101), |a, b| a == b), None);
+    }
+
+    #[test]
+    fn test_start_resize() {
+        let mut map = ScalableHashMap::new();
+        let node_number = 3;
+        let nodes = generate_node_list(node_number);
+        for node in nodes {
+            map.insert(node);
+        }
+        map.start_resizing();
+        assert_eq!(map.size(), 3);
+        let node = HashNode::new(None, 2);
+        assert_eq!(map.lookup(&node, |a, b| a == b), Some(&node));
+    }
+
+    #[test]
+    fn test_help_resizing() {
+        let mut map = ScalableHashMap::new();
+        let node_number = 3;
+        let nodes = generate_node_list(node_number);
+        for node in nodes {
+            map.insert(node);
+        }
+        map.start_resizing();
+        assert_eq!(map.size(), 3);
+        let node = HashNode::new(None, 2);
+        assert_eq!(map.lookup(&node, |a, b| a == b), Some(&node));
+        map.help_resizing();
+        assert_eq!(map.size(), 3);
+        assert!(map.table2.is_none());
     }
 }

@@ -1,3 +1,5 @@
+use std::{fmt::Display, ops::RangeBounds};
+
 use anyhow::Result;
 
 #[derive(Debug, Clone)]
@@ -12,11 +14,33 @@ impl PartialEq for HashNode {
     }
 }
 
+impl HashNode {
+    pub fn new(next: Option<HashNode>, code: u64) -> Self {
+        if let Some(n) = next {
+            Self {
+                next: Some(Box::new(n)),
+                code,
+            }
+        } else {
+            Self { next: None, code }
+        }
+    }
+}
+
+
+#[derive(Debug)]
 pub struct HashTable {
     pub table: Vec<Option<Box<HashNode>>>,
     size: usize,
     mask: usize,
 }
+
+impl Display for HashTable {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "HashTable {{ size: {}, mask: {} }} \n table: {:#?}", self.size, self.mask, self.table)
+    }
+}
+
 
 impl HashTable {
     pub fn new(n: usize) -> Result<HashTable> {
@@ -66,6 +90,18 @@ impl HashTable {
         })
     }
 
+    pub fn drain<R>(&mut self, range: R) -> impl Iterator<Item = Box<HashNode>> + '_
+    where
+        R: RangeBounds<usize>,
+    {
+        self.table.drain(range).filter_map(|node| {
+            if node.is_some() {
+                self.size -= 1;
+            }
+            node
+        })
+    }
+
     pub fn is_empty(&self) -> bool {
         self.size == 0
     }
@@ -76,6 +112,10 @@ impl HashTable {
 
     pub fn mask(&self) -> usize {
         self.mask
+    }
+
+    pub fn resize(&mut self, new_size: usize) {
+        self.table.resize(new_size, None);
     }
 }
 
