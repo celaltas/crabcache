@@ -3,7 +3,7 @@ use crate::hashtable::{HashNode, HashTable};
 
 const LOAD_FACTOR: usize = 8;
 
-struct ScalableHashMap {
+pub struct ScalableHashMap {
     table1: Option<HashTable>,
     table2: Option<HashTable>,
 }
@@ -38,8 +38,8 @@ impl ScalableHashMap {
             return;
         }
         if let (Some(noble), Some(substitute)) = (&mut self.table2, &mut self.table1) {
-            noble.drain(..noble.size()).for_each(|item| {
-                substitute.insert(*item);
+            noble.drain(..noble.size()).for_each(|mut item| {
+                substitute.insert(&mut item);
             });
         }
         if self.table2.as_ref().map_or(0, |t| t.size()) == 0 {
@@ -58,8 +58,19 @@ impl ScalableHashMap {
             .and_then(|t| t.lookup(key, cmp))
             .or_else(|| self.table2.as_ref().and_then(|t| t.lookup(key, cmp)))
     }
+    pub fn lookup_mut(
+        &mut self,
+        key: &HashNode,
+        cmp: fn(&HashNode, &HashNode) -> bool,
+    ) -> Option<&mut HashNode> {
+        self.help_resizing();
+        self.table1
+            .as_mut()
+            .and_then(|t| t.lookup_mut(key, cmp))
+            .or_else(|| self.table2.as_mut().and_then(|t| t.lookup_mut(key, cmp)))
+    }
 
-    pub fn insert(&mut self, node: HashNode) {
+    pub fn insert(&mut self, node: &mut HashNode) {
         if let Some(table) = self.table1.as_mut() {
             table.insert(node)
         } else {
@@ -144,8 +155,8 @@ mod tests {
     fn test_insert() {
         let mut map = ScalableHashMap::new();
         let node_number = 15;
-        let nodes = generate_node_list(node_number);
-        for node in nodes {
+        let mut nodes = generate_node_list(node_number);
+        for node in nodes.iter_mut() {
             map.insert(node);
         }
         assert_eq!(map.size(), node_number);
@@ -155,10 +166,10 @@ mod tests {
     fn test_lookup() {
         let mut map = ScalableHashMap::new();
         let node_number = 15;
-        let nodes = generate_node_list(node_number);
+        let mut nodes = generate_node_list(node_number);
         let nodes_for_search = nodes.clone();
 
-        for node in nodes {
+        for node in nodes.iter_mut() {
             map.insert(node);
         }
         for node in &nodes_for_search {
@@ -172,10 +183,10 @@ mod tests {
     fn test_pop() {
         let mut map = ScalableHashMap::new();
         let node_number = 15;
-        let nodes = generate_node_list(node_number);
+        let mut nodes = generate_node_list(node_number);
         let nodes_for_search = nodes.clone();
 
-        for node in nodes {
+        for node in nodes.iter_mut() {
             map.insert(node);
         }
         for mut node in nodes_for_search {
@@ -189,8 +200,8 @@ mod tests {
     fn test_start_resize() {
         let mut map = ScalableHashMap::new();
         let node_number = 3;
-        let nodes = generate_node_list(node_number);
-        for node in nodes {
+        let mut nodes = generate_node_list(node_number);
+        for node in nodes.iter_mut() {
             map.insert(node);
         }
         map.start_resizing();
@@ -203,8 +214,8 @@ mod tests {
     fn test_help_resizing() {
         let mut map = ScalableHashMap::new();
         let node_number = 3;
-        let nodes = generate_node_list(node_number);
-        for node in nodes {
+        let mut nodes = generate_node_list(node_number);
+        for node in nodes.iter_mut() {
             map.insert(node);
         }
         map.start_resizing();

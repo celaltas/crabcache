@@ -4,6 +4,7 @@ use connection::{Connection, ConnectionState::*};
 use mio::event::Event;
 use mio::net::TcpListener;
 use mio::{Events, Interest, Poll, Token};
+use scalablehashmap::ScalableHashMap;
 use std::collections::HashMap;
 use std::io::{self, Read, Write};
 
@@ -11,6 +12,8 @@ pub mod commands;
 pub mod connection;
 pub mod hashtable;
 pub mod scalablehashmap;
+pub mod entry;
+pub mod serialization;
 
 const SERVER: Token = Token(0);
 
@@ -24,6 +27,7 @@ fn main() -> Result<()> {
         .register(&mut server, SERVER, Interest::READABLE)?;
     let mut connections = HashMap::new();
     let mut unique_token = Token(SERVER.0 + 1);
+    let mut db = ScalableHashMap::new();
 
     loop {
         poll.poll(&mut events, None)?;
@@ -56,7 +60,7 @@ fn main() -> Result<()> {
                         match connection.state {
                             ReadyToRead => {
                                 if event.is_readable() {
-                                    read_request(connection, &poll, event)?;
+                                    read_request(&mut db,connection, &poll, event)?;
                                 }
                             }
                             ReadyToWrite => {
@@ -76,7 +80,7 @@ fn main() -> Result<()> {
     }
 }
 
-fn read_request(connection: &mut Connection, poll: &Poll, event: &Event) -> Result<()> {
+fn read_request(db:&mut ScalableHashMap, connection: &mut Connection, poll: &Poll, event: &Event) -> Result<()> {
     let mut bytes_read = 0;
     loop {
         match connection
@@ -112,15 +116,17 @@ fn read_request(connection: &mut Connection, poll: &Poll, event: &Event) -> Resu
         let command = Command::parse_request(&connection.read_buffer)?;
         match command {
             Command::Get(key) => {
-                let _ = commands::get::invoke(key);
+                let _ = commands::get::invoke(db,key);
             }
             Command::Set(key, value) => {
-                let _ = commands::set::invoke(key, value);
+                let _ = commands::set::invoke(db, key, value);
             }
             Command::Del(key) => {
-                let _ = commands::del::invoke(key);
+                let _ = commands::del::invoke(db, key);
             }
         }
+
+        println!("db: {}", db);
     })
 }
 

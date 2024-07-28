@@ -25,8 +25,16 @@ impl HashNode {
             Self { next: None, code }
         }
     }
+   
 }
 
+pub fn fnv1a_hash(bytes: &[u8]) -> u64 {
+    let mut h: u32 = 0x811C9DC5;
+    for &byte in bytes {
+        h = h.wrapping_add(byte as u32).wrapping_mul(0x01000193);
+    }
+    h as u64
+}
 
 #[derive(Debug)]
 pub struct HashTable {
@@ -37,10 +45,13 @@ pub struct HashTable {
 
 impl Display for HashTable {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "HashTable {{ size: {}, mask: {} }} \n table: {:#?}", self.size, self.mask, self.table)
+        write!(
+            f,
+            "HashTable {{ size: {}, mask: {} }} \n table: {:#?}",
+            self.size, self.mask, self.table
+        )
     }
 }
-
 
 impl HashTable {
     pub fn new(n: usize) -> Result<HashTable> {
@@ -52,13 +63,13 @@ impl HashTable {
         Ok(Self { table, size, mask })
     }
 
-    pub fn insert(&mut self, mut node: HashNode) {
+    pub fn insert(&mut self, node: &mut HashNode) {
         let pos = (node.code & (self.mask as u64)) as usize;
         let next = self.table.get_mut(pos).and_then(Option::take);
         if let Some(n) = next {
             node.next = Some(n);
         }
-        self.table[pos] = Some(Box::new(node));
+        self.table[pos] = Some(Box::new(node.clone()));
         self.size += 1;
     }
 
@@ -73,10 +84,30 @@ impl HashTable {
         let pos = (node.code & (self.mask as u64)) as usize;
         let mut from = self.table[pos].as_ref();
         while let Some(n) = from {
+            let address_of_found_node = &**n as *const HashNode;
+            println!("lookup:\n exist:{:#?}\n, search (re): {:#?}\n, address_of_found_node: {:#?}\n", n, node, address_of_found_node);
             if cmp(n, node) {
                 return Some(n);
             }
             from = n.next.as_ref();
+        }
+        None
+    }
+    pub fn lookup_mut(
+        &mut self,
+        node: &HashNode,
+        cmp: fn(&HashNode, &HashNode) -> bool,
+    ) -> Option<&mut HashNode> {
+        if self.table.is_empty() {
+            return None;
+        }
+        let pos = (node.code & (self.mask as u64)) as usize;
+        let mut from = self.table[pos].as_mut();
+        while let Some(n) = from {
+            if cmp(n, node) {
+                return Some(n);
+            }
+            from = n.next.as_mut();
         }
         None
     }
@@ -181,8 +212,8 @@ mod tests {
     #[test]
     fn test_insert() {
         let mut ht = HashTable::new(4).unwrap();
-        let nodes = generate_node_list(18);
-        for n in nodes {
+        let mut nodes = generate_node_list(18);
+        for n in nodes.iter_mut() {
             ht.insert(n);
         }
         assert_eq!(ht.size, 18);
@@ -193,8 +224,8 @@ mod tests {
     fn test_lookup() {
         let mut ht = HashTable::new(4).unwrap();
 
-        let nodes = generate_node_list(18);
-        for n in nodes {
+        let mut nodes = generate_node_list(18);
+        for n in nodes.iter_mut() {
             ht.insert(n);
         }
         print_out_hash_table(&ht);
