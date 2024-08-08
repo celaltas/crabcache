@@ -16,7 +16,6 @@ impl Entry {
     }
 
     pub fn check_entry_equality(left: &HashNode, right: &HashNode) -> bool {
-        println!("left: {:?}, right: {:?}", left, right);
         let le = unsafe {
             let left = left as *const HashNode;
             container_of!(left, Entry, node)
@@ -25,18 +24,11 @@ impl Entry {
             let right = right as *const HashNode;
             container_of!(right, Entry, node)
         };
-        println!("le: {:?}, re: {:?}", le, re);
         let entry_left = unsafe { &*le };
         let entry_right = unsafe { &*re };
-        println!("entry_left: {:?}, entry_right: {:?}", entry_left, entry_right);
-
-        println!("-------------------------------------------");
-        println!("left key: {:?}", entry_left.key);
-        println!("right key: {:?}", entry_right.key);
-
-
         entry_left.key == entry_right.key
     }
+
 }
 
 struct Data {

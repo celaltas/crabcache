@@ -36,7 +36,7 @@ pub fn response_nil(out: &mut Vec<u8>) {
     out.push(SerializationType::Null.as_num());
 }
 
-fn response_err(out: &mut Vec<u8>, code: u32, message: &str) {
+pub fn response_err(out: &mut Vec<u8>, code: u32, message: &str) {
     out.push(SerializationType::Err.as_num());
     out.write_u32::<LittleEndian>(code).unwrap();
     let len = message.len() as u32;
@@ -49,14 +49,14 @@ pub fn response_integer(out: &mut Vec<u8>, value: i64) {
     out.write_i64::<LittleEndian>(value).unwrap();
 }
 
-fn response_string(out: &mut Vec<u8>, value: &str) {
+pub fn response_string(out: &mut Vec<u8>, value: &[u8]) {
     out.push(SerializationType::String.as_num());
     let len = value.len() as u32;
     out.write_u32::<LittleEndian>(len).unwrap();
-    out.extend_from_slice(value.as_bytes());
+    out.extend_from_slice(value);
 }
 
-fn response_array(out: &mut Vec<u8>, n: u32) {
+pub fn response_array(out: &mut Vec<u8>, n: u32) {
     out.push(SerializationType::Array.as_num());
     out.write_u32::<LittleEndian>(n).unwrap();
 }

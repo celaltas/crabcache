@@ -10,3 +10,12 @@ anyhow = "1.0.86"
 byteorder = "1.5.0"
 container_of = "0.5.1"
 mio = { version = "1", features = ["os-poll", "net"] }
+quickcheck = "0.8"
+
+
+
+
+[dev-dependencies]
+rand = "0.6.5"
+itertools = "0.8"
+quickcheck_macros = "0.8"

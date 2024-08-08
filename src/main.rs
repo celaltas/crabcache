@@ -1,4 +1,5 @@
 use anyhow::Result;
+use byteorder::{LittleEndian, WriteBytesExt};
 use commands::Command;
 use connection::{Connection, ConnectionState::*};
 use mio::event::Event;
@@ -10,10 +11,11 @@ use std::io::{self, Read, Write};
 
 pub mod commands;
 pub mod connection;
+pub mod entry;
 pub mod hashtable;
 pub mod scalablehashmap;
-pub mod entry;
 pub mod serialization;
+pub mod avl_tree;
 
 const SERVER: Token = Token(0);
 
@@ -60,7 +62,7 @@ fn main() -> Result<()> {
                         match connection.state {
                             ReadyToRead => {
                                 if event.is_readable() {
-                                    read_request(&mut db,connection, &poll, event)?;
+                                    read_request(&mut db, connection, &poll, event)?;
                                 }
                             }
                             ReadyToWrite => {
@@ -80,7 +82,12 @@ fn main() -> Result<()> {
     }
 }
 
-fn read_request(db:&mut ScalableHashMap, connection: &mut Connection, poll: &Poll, event: &Event) -> Result<()> {
+fn read_request(
+    db: &mut ScalableHashMap,
+    connection: &mut Connection,
+    poll: &Poll,
+    event: &Event,
+) -> Result<()> {
     let mut bytes_read = 0;
     loop {
         match connection
@@ -92,19 +99,7 @@ fn read_request(db:&mut ScalableHashMap, connection: &mut Connection, poll: &Pol
             }
             Ok(n) => {
                 bytes_read += n;
-                connection.state = ReadyToWrite;
-                let hello_world_vec: Vec<u8> = vec![
-                    12, 0, 0, 0, // 4-byte length (12 in big-endian format)
-                    104, 101, 108, 108, 111, 32, 119, 111, 114, 108, 100,
-                    33, // "hello world!"
-                ];
-                let len = hello_world_vec.len();
-                connection.write_buffer[..len].copy_from_slice(&hello_world_vec);
-                poll.registry().reregister(
-                    &mut connection.stream,
-                    event.token(),
-                    Interest::WRITABLE,
-                )?;
+
                 // connection.reset_read_buffer();
             }
             Err(ref err) if would_block(err) => break,
@@ -114,19 +109,26 @@ fn read_request(db:&mut ScalableHashMap, connection: &mut Connection, poll: &Pol
     }
     Ok(if bytes_read != 0 {
         let command = Command::parse_request(&connection.read_buffer)?;
+        let mut output = Vec::new();
+        let mut response = Vec::new();
         match command {
             Command::Get(key) => {
-                let _ = commands::get::invoke(db,key);
+                let _ = commands::get::invoke(db, key, &mut output);
             }
             Command::Set(key, value) => {
-                let _ = commands::set::invoke(db, key, value);
+                let _ = commands::set::invoke(db, key, value, &mut output);
             }
             Command::Del(key) => {
-                let _ = commands::del::invoke(db, key);
+                let _ = commands::del::invoke(db, key, &mut output);
             }
         }
-
-        println!("db: {}", db);
+        let len = output.len() as u32;
+        response.write_u32::<LittleEndian>(len).unwrap();
+        response.extend_from_slice(&output);
+        connection.write_buffer[..response.len()].copy_from_slice(&response);
+        connection.state = ReadyToWrite;
+        poll.registry()
+            .reregister(&mut connection.stream, event.token(), Interest::WRITABLE)?;
     })
 }
 

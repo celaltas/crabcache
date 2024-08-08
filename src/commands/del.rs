@@ -7,8 +7,7 @@ use crate::{
 use anyhow::Result;
 use container_of::container_of;
 
-pub fn invoke(db: &mut ScalableHashMap, key: Vec<u8>) -> Result<Vec<u8>> {
-    let mut out = Vec::new();
+pub fn invoke(db: &mut ScalableHashMap, key: Vec<u8>, out: &mut Vec<u8>) -> Result<()> {
     let code = fnv1a_hash(&key);
     let node = HashNode::new(None, code);
     let mut entry = Entry::new(node, key, None);
@@ -22,10 +21,10 @@ pub fn invoke(db: &mut ScalableHashMap, key: Vec<u8>) -> Result<Vec<u8>> {
             &*e
         };
         drop(entry);
-        response_integer(&mut out, 1);
-        return Ok(out);
+        response_integer(out, 1);
+        return Ok(());
     } else {
-        response_integer(&mut out, 0);
-        return Ok(out);
+        response_integer(out, 0);
+        return Ok(());
     }
 }

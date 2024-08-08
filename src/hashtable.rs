@@ -84,8 +84,6 @@ impl HashTable {
         let pos = (node.code & (self.mask as u64)) as usize;
         let mut from = self.table[pos].as_ref();
         while let Some(n) = from {
-            let address_of_found_node = &**n as *const HashNode;
-            println!("lookup:\n exist:{:#?}\n, search (re): {:#?}\n, address_of_found_node: {:#?}\n", n, node, address_of_found_node);
             if cmp(n, node) {
                 return Some(n);
             }

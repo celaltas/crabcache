@@ -68,7 +68,6 @@ fn resolve_command_payload(request: &[u8]) -> Result<Vec<u8>> {
         return Err(anyhow::anyhow!("Invalid request"));
     }
     let length = LittleEndian::read_u32(&request[..4]);
-    println!("lenght: {length}");
     if length < 2 || length > 3 {
         return Err(anyhow::anyhow!("Invalid length"));
     }
